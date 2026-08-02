@@ -2,14 +2,10 @@
 Main pipeline: preprocessing → feature extraction → clustering → recommendations → evaluation.
 
 Usage:
-    python run_pipeline.py [--baseline b1|b2|b3|b4] [--clustering bgmm]
-                           [--skip-train] [--eval-n 50] [--device cpu]
+    python run_pipeline.py [--baseline b1|b2|b3|b4] [--clustering bgmm] [--skip-train] [--eval-n 50] [--device cpu|cuda]
 
 Clustering modes:
     bgmm          (default) Each baseline independently fits its own BGMM and infers its own K.
-    kmeans-elbow  All baselines independently run KMeans for K=2..20 and select K via
-                  the Elbow method (largest second-derivative of the inertia curve).
-                  Elbow plot saved to artifacts/<baseline>_elbow_plot.png.
 """
 import argparse
 import json
@@ -26,7 +22,6 @@ from src.baselines.b2_markov import B2Pipeline
 from src.baselines.b3_transformer import B3Pipeline
 from src.baselines.b4_hybrid import B4Pipeline
 from src.clustering.bgmm import BGMMClustering
-from src.clustering.kmeans_elbow import KMeansElbowClustering
 from src.recommendation.health_score import compute_childcare_scores
 from src.recommendation.exemplars import find_exemplars
 from src.recommendation.generator import generate_recommendation
@@ -40,8 +35,8 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--baseline", choices=["b1", "b2", "b3", "b4"], default="b4")
     p.add_argument(
-        "--clustering", choices=["bgmm", "kmeans-elbow"], default="bgmm",
-        help="Clustering algorithm: 'bgmm' (default) or 'kmeans-elbow' (elbow-optimised KMeans)",
+        "--clustering", choices=["bgmm"], default="bgmm",
+        help="Clustering algorithm: bgmm",
     )
     p.add_argument("--skip-train", action="store_true", help="Load cached model/embeddings")
     p.add_argument("--eval-n", type=int, default=100, help="# test respondents to evaluate")
@@ -97,7 +92,7 @@ def load_or_build_embeddings(baseline: str, sequences_train, sequences_val, sequ
 def main():
     args = parse_args()
 
-    # ── Step 1-3: Load and preprocess ──────────────────────────────────────
+    # Step 1-3: Load and preprocess
     print("Loading raw ATUS data...")
     df = load_raw()
     df = map_activities(df)
@@ -105,14 +100,14 @@ def main():
 
     sequences = build_sequences(df)
 
-    # ── Step 4: Split ───────────────────────────────────────────────────────
+    # Step 4: Split
     train_ids, val_ids, test_ids = split_respondents(sequences)
     print(f"  Train: {len(train_ids)}, Val: {len(val_ids)}, Test: {len(test_ids)}")
     seq_train = subset(sequences, train_ids)
     seq_val = subset(sequences, val_ids)
     seq_test = subset(sequences, test_ids)
 
-    # ── Step 5-9: Feature extraction ────────────────────────────────────────
+    # Step 5-9: Feature extraction
     embeddings = load_or_build_embeddings(
         args.baseline, seq_train, seq_val, seq_test, args.skip_train, args.device
     )
@@ -120,47 +115,25 @@ def main():
     val_ids_emb, X_val = embeddings["val"]
     test_ids_emb, X_test = embeddings["test"]
 
-    # ── Clustering ──────────────────────────────────────────────────────────
-    if args.clustering == "kmeans-elbow":
-        print(f"\n=== Clustering (KMeans + Elbow) for {args.baseline.upper()} ===")
-        elbow_cache = ARTIFACTS_DIR / f"{args.baseline}_kmeans_elbow_model.pkl"
-        elbow_k_cache = ARTIFACTS_DIR / f"{args.baseline}_kmeans_k.json"
-        elbow_plot = str(ARTIFACTS_DIR / f"{args.baseline}_elbow_plot.png")
+    # Clustering 
+    bgmm_file = "bgmm_model.pkl" if args.baseline == "b4" else f"{args.baseline}_bgmm_model.pkl"
+    bgmm_cache = ARTIFACTS_DIR / bgmm_file
+    print(f"\n=== Clustering (BGMM, independent per baseline) for {args.baseline.upper()} ===")
 
-        if args.skip_train and elbow_cache.exists():
-            print("  Loading cached KMeans-Elbow model...")
-            with open(elbow_cache, "rb") as f:
-                clusterer = pickle.load(f)
-            k = clusterer.k
-        else:
-            clusterer = KMeansElbowClustering(k_min=2, k_max=20)
-            clusterer.fit(X_train, plot_path=elbow_plot)
-            k = clusterer.k
-            with open(elbow_cache, "wb") as f:
-                pickle.dump(clusterer, f)
-            with open(elbow_k_cache, "w") as f:
-                json.dump({"k": k, "baseline": args.baseline}, f)
-
-    else:  # bgmm (default) — each baseline fits its own BGMM independently
-        bgmm_file = "bgmm_model.pkl" if args.baseline == "b4" else f"{args.baseline}_bgmm_model.pkl"
-        bgmm_cache = ARTIFACTS_DIR / bgmm_file
-        print(f"\n=== Clustering (BGMM, independent per baseline) for {args.baseline.upper()} ===")
-
-        if args.skip_train and bgmm_cache.exists():
-            print("  Loading cached BGMM model...")
-            with open(bgmm_cache, "rb") as f:
-                clusterer = pickle.load(f)
-            k = clusterer.k
-        else:
-            clusterer = BGMMClustering()
-            clusterer.fit(X_train)
-            k = clusterer.k
-            with open(bgmm_cache, "wb") as f:
-                pickle.dump(clusterer, f)
-            # Keep bgmm_k.json for B4 (used by visualize_clusters.py / label_clusters.py)
-            if args.baseline == "b4":
-                with open(ARTIFACTS_DIR / "bgmm_k.json", "w") as f:
-                    json.dump({"k": k}, f)
+    if args.skip_train and bgmm_cache.exists():
+        print("  Loading cached BGMM model...")
+        with open(bgmm_cache, "rb") as f:
+            clusterer = pickle.load(f)
+        k = clusterer.k
+    else:
+        clusterer = BGMMClustering()
+        clusterer.fit(X_train)
+        k = clusterer.k
+        with open(bgmm_cache, "wb") as f:
+            pickle.dump(clusterer, f)
+        if args.baseline == "b4":
+            with open(ARTIFACTS_DIR / "bgmm_k.json", "w") as f:
+                json.dump({"k": k}, f)
 
     train_labels = clusterer.predict(X_train)
     test_labels = clusterer.predict(X_test)
@@ -169,7 +142,7 @@ def main():
     all_embeddings = np.vstack([X_train, X_test])
     all_labels = np.concatenate([train_labels, test_labels])
 
-    # ── Intrinsic clustering metrics ────────────────────────────────────────
+    # Intrinsic clustering metrics
     print("\n=== Clustering quality metrics ===")
     sil = clustering_silhouette(X_train, train_labels)
     loglik = bgmm_val_loglik(clusterer, X_val) if args.clustering == "bgmm" else None
@@ -178,7 +151,7 @@ def main():
     if loglik is not None:
         print(f"  Val log-likelihood: {loglik:.4f}")
 
-    # ── Childcare scoring ───────────────────────────────────────────────────
+    # Childcare scoring 
     print("\n=== Computing childcare scores ===")
     all_childcare_scores = compute_childcare_scores(sequences, all_ids, all_labels)
 
@@ -192,7 +165,7 @@ def main():
     sleep_median = float(np.median(all_sleep))
     print(f"  Population sleep median: {sleep_median:.0f} min")
 
-    # ── Recommendations on test set ─────────────────────────────────────────
+    # Recommendations on test set
     eval_n = min(args.eval_n, len(test_ids_emb))
     eval_test_ids = test_ids_emb[:eval_n]
     id_to_all_idx = {uid: i for i, uid in enumerate(all_ids)}
@@ -218,7 +191,7 @@ def main():
         rec = generate_recommendation(uid, exemplar_ids, sequences)
         recommendations.append(rec)
 
-    # ── Auto evaluation ─────────────────────────────────────────────────────
+    # Auto evaluation
     print("\n=== Auto evaluation ===")
     metrics = evaluate_batch(
         test_ids=eval_test_ids,
@@ -233,7 +206,7 @@ def main():
     print(f"  Mean edit distance        : {metrics['mean_edit_distance']:.2f}")
     print(f"  N evaluated               : {metrics['n_evaluated']}")
 
-    # ── Save results ─────────────────────────────────────────────────────────
+    # Save results
     suffix = f"_{args.clustering}" if args.clustering != "bgmm" else ""
     results_path = ARTIFACTS_DIR / f"{args.baseline}{suffix}_results.json"
     with open(results_path, "w") as f:
