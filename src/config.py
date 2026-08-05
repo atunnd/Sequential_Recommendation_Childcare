@@ -60,7 +60,7 @@ OLLAMA_JUDGE_MODEL = "gemma4"           # model for the LLM judge
 
 def load_activity_mapping() -> dict[str, int]:
     """Return {6-digit-code: category_id} for all ATUS codes."""
-    with open(CONFIGS_DIR / "activity_mapping.yaml") as f:
+    with open(CONFIGS_DIR / "activity_mapping.yaml", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     mapping = {}
     for cat_id, cat_info in cfg["categories"].items():
