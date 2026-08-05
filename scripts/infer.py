@@ -4,7 +4,7 @@ Inference: produce a childcare recommendation from cached artifacts, without ret
 
     python scripts/infer.py --n 5                          # first 5 test respondents
     python scripts/infer.py --n 5 --random                 # random sample of the test split
-    python scripts/infer.py --tucaseid 20030100013280      # one known respondent
+    python scripts/infer.py --tucaseid 20030404031185      # one known respondent
     python scripts/infer.py --diary my_day.json            # an unseen diary (b1/b3/b4)
     python scripts/infer.py --baseline b3 --n 20 --out recs.json --quiet
 
