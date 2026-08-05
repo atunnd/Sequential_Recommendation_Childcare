@@ -147,7 +147,7 @@ def sleep_median_of(sequences: dict, ids: list) -> float:
 # unseen diaries 
 def read_diary(path: Path) -> dict:
     """Turn a diary JSON into the same dict shape build_sequences() emits."""
-    raw = json.loads(Path(path).read_text())
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
 
     durations = [int(d) for d in raw["durations"]]
     if "activities" in raw:
