@@ -7,35 +7,6 @@ Inference: produce a childcare recommendation from cached artifacts, without ret
     python scripts/infer.py --tucaseid 20030404031185      # one known respondent
     python scripts/infer.py --diary my_day.json            # an unseen diary (b1/b3/b4)
     python scripts/infer.py --baseline b3 --n 20 --out recs.json --quiet
-
-What it reuses vs. what it recomputes
--------------------------------------
-Reused from artifacts/: the encoder (b3/b4 checkpoints), the fitted clusterer, and the
-cached population embeddings. Nothing is refit.
-
-Recomputed every run: the exemplar pool. `find_exemplars` ranks peers by childcare minutes
-normalized *within their own cluster*, so it needs every respondent's diary, not just the
-query's. That means the raw CSVs still have to be read. To keep repeat calls cheap this
-script caches the parsed sequences in artifacts/sequences_cache.pkl, keyed on the size and
-mtime of both CSVs, so only the first run pays the ~524M parse. Pass --no-cache to skip it.
-
-The pool is rebuilt exactly as run_pipeline.py builds it — train + test embeddings, val
-excluded — so a query already in the dataset reproduces the recommendation in
-<baseline>_results.json byte for byte.
-
-Out-of-sample diaries (--diary)
--------------------------------
-Supported for b1 (stateless), b3 and b4 (checkpoints are saved). NOT supported for b2:
-B2Pipeline fits a TruncatedSVD that is never persisted to disk, only its output embeddings
-are, so an unseen diary cannot be projected into B2 space without refitting.
-
-Diary JSON format — durations in minutes, parallel to activities:
-
-    {"activities": [0, 2, 14, 4, 7], "durations": [480, 60, 120, 45, 480]}
-
-or with raw 6-digit ATUS codes instead of category ids (mapped via activity_mapping.yaml):
-
-    {"raw_codes": ["010101", "020201"], "durations": [480, 60]}
 """
 import argparse
 import json

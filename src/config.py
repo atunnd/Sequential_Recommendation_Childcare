@@ -52,10 +52,6 @@ TOP_K_EXEMPLARS = 20
 # SVD for B2
 B2_SVD_COMPONENTS = 64
 
-# Ollama (local LLM)
-OLLAMA_HOST = "http://localhost:11434"   # default Ollama server address
-OLLAMA_AGENT_MODEL = "gemma4"           # model for the recommendation agent
-OLLAMA_JUDGE_MODEL = "gemma4"           # model for the LLM judge
 
 
 def load_activity_mapping() -> dict[str, int]:
